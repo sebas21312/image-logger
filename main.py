@@ -6,7 +6,7 @@ import base64
 
 app = Flask(__name__)
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/TU_WEBHOOK_AQUI"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEVm4J5LRX7stzfvjOJOwJe2PmCZXkgVeub0Ey0Dr75gMzSziEte9jkux4e"
 
 # Imagen pixel transparente
 PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
